@@ -22,4 +22,4 @@ RUN (type -p wget >/dev/null || ( apt update &&  apt-get install wget -y)) \
 	&&  apt install gh -y
 
 RUN git clone $BLOCKCHAIN_GIT_URL $BLOCKCHAIN_HOME
-
+EXPOSE 8551
