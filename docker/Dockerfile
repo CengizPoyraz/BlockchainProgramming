@@ -11,7 +11,7 @@ RUN apt-get update && apt upgrade -y
 RUN apt-get install -y software-properties-common
 RUN add-apt-repository -y ppa:ethereum/ethereum
 RUN apt-get update
-RUN apt install -y ethereum git curl nano
+RUN apt install -y ethereum git curl nano nodejs npm
 RUN (type -p wget >/dev/null || ( apt update &&  apt-get install wget -y)) \
 	&&  mkdir -p -m 755 /etc/apt/keyrings \
         && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -22,4 +22,5 @@ RUN (type -p wget >/dev/null || ( apt update &&  apt-get install wget -y)) \
 	&&  apt install gh -y
 
 RUN git clone $BLOCKCHAIN_GIT_URL $BLOCKCHAIN_HOME
+RUN npm install -g npx
 EXPOSE 8551
