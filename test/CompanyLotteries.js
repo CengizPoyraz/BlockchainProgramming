@@ -2,68 +2,90 @@ const { expect } = require('chai');
 const { ethers } = require('hardhat');
 require("@nomicfoundation/hardhat-chai-matchers");
 
-describe('CompanyLotteriesTest', function () {
+describe('CompanyLotteries', function () {
   let companyLotteries;
   let owner;
   let user1;
   let user2;
   let mockToken;
+  let diamondProxy;
+  let diamondCutFacet;
+  let diamondLoupeFacet;
 
-    // Helper function to create a lottery
-    async function createLottery(
-        params = {}
-    ) {
-        const defaultParams = {
-            endTime: Math.floor(Date.now() / 1000) + 86400, // 24 hours from now
-            totalTickets: 100,
-            winnersCount: 3,
-            minTicketPercentage: 50,
-            ticketPrice: ethers.parseEther("0.1")
-        };
+  // Helper function to create a lottery
+  async function createLottery(params = {}) {
+      const defaultParams = {
+          endTime: Math.floor(Date.now() / 1000) + 86400, // 24 hours from now
+          totalTickets: 100,
+          winnersCount: 3,
+          minTicketPercentage: 50,
+          ticketPrice: ethers.parseEther("0.1")
+      };
 
-        const finalParams = { ...defaultParams, ...params };
-        console.log("[script] [createLottery] endTime: ", finalParams.endTime);
-        const htmlHash = ethers.encodeBytes32String('lottery-desc-hash');
-        const url = 'https://example.com/lottery-details';
-        return await companyLotteries.createLottery(
-            finalParams.endTime,
-            finalParams.totalTickets,
-            finalParams.winnersCount,
-            finalParams.minTicketPercentage,
-            finalParams.ticketPrice,
-            htmlHash,
-            url
-        );
-    }
+      const finalParams = { ...defaultParams, ...params };
+      console.log("[script] [createLottery] endTime: ", finalParams.endTime);
+      const htmlHash = ethers.encodeBytes32String('lottery-desc-hash');
+      const url = 'https://example.com/lottery-details';
+      return await companyLotteries.createLottery(
+          finalParams.endTime,
+          finalParams.totalTickets,
+          finalParams.winnersCount,
+          finalParams.minTicketPercentage,
+          finalParams.ticketPrice,
+          htmlHash,
+          url
+      );
+  }
+
   beforeEach(async function () {
-        // Get signers
-        [owner, user1, user2, user3] = await ethers.getSigners();
+      // Get signers
+      [owner, user1, user2, user3] = await ethers.getSigners();
 
-        // Deploy mock ERC20 token
-        const MockToken = await ethers.getContractFactory("MockERC20");
-        mockToken = await MockToken.deploy("MockToken", "MTK", 18);
+      // Deploy mock ERC20 token
+      const MockToken = await ethers.getContractFactory("MockERC20");
+      mockToken = await MockToken.deploy("MockToken", "MTK", 18);
 
-        // Deploy CompanyLotteries contract
-        const CompanyLotteriesFactory = await ethers.getContractFactory("CompanyLotteries");
-        companyLotteries = await CompanyLotteriesFactory.deploy(owner);
+      // Deploy Diamond Proxy
+      const DiamondProxy = await ethers.getContractFactory("DiamondProxy");
+      diamondProxy = await DiamondProxy.deploy();
 
-        // Set payment token
-        await companyLotteries.setPaymentToken(mockToken.target);
+      // Deploy DiamondCutFacet
+      const DiamondCutFacet = await ethers.getContractFactory("DiamondCutFacet");
+      diamondCutFacet = await DiamondCutFacet.deploy();
 
-        // Mint tokens to users
-        await mockToken.mint(user1.address, ethers.parseEther("1000"));
-        await mockToken.mint(user2.address, ethers.parseEther("1000"));
-        await mockToken.mint(user3.address, ethers.parseEther("1000"));
+      // Deploy DiamondLoupeFacet
+      const DiamondLoupeFacet = await ethers.getContractFactory("DiamondLoupeFacet");
+      diamondLoupeFacet = await DiamondLoupeFacet.deploy();
 
-        // Approve tokens for the contract
-        await mockToken.connect(user1).approve(companyLotteries.target, ethers.parseEther("1000"));
-        await mockToken.connect(user2).approve(companyLotteries.target, ethers.parseEther("1000"));
-        await mockToken.connect(user3).approve(companyLotteries.target, ethers.parseEther("1000"));
+      // Deploy CompanyLotteries contract
+      const CompanyLotteriesFactory = await ethers.getContractFactory("CompanyLotteries");
+      companyLotteries = await CompanyLotteriesFactory.deploy(owner.address);
 
+      // Add CompanyLotteries facet to Diamond Proxy
+      await diamondCutFacet.diamondCut(companyLotteries.address, [
+        // Add function selectors here
+        companyLotteries.interface.getSighash("createLottery"),
+        // Add other function selectors as needed
+      ]);
 
-        // Debug: Check balances and allowances
-        console.log('User1 Balance:', await mockToken.balanceOf(user1.address));
-        console.log('User1 Allowance:', await mockToken.allowance(await user1.getAddress(), await companyLotteries.getAddress()));
+      companyLotteries = await ethers.getContractAt("CompanyLotteries", diamondProxy.address);
+
+      // Set payment token
+      await companyLotteries.setPaymentToken(mockToken.address);
+
+      // Mint tokens to users
+      await mockToken.mint(user1.address, ethers.parseEther("1000"));
+      await mockToken.mint(user2.address, ethers.parseEther("1000"));
+      await mockToken.mint(user3.address, ethers.parseEther("1000"));
+
+      // Approve tokens for the contract
+      await mockToken.connect(user1).approve(companyLotteries.address, ethers.parseEther("1000"));
+      await mockToken.connect(user2).approve(companyLotteries.address, ethers.parseEther("1000"));
+      await mockToken.connect(user3).approve(companyLotteries.address, ethers.parseEther("1000"));
+
+      // Debug: Check balances and allowances
+      console.log('User1 Balance:', await mockToken.balanceOf(user1.address));
+      console.log('User1 Allowance:', await mockToken.allowance(user1.address, companyLotteries.address));
   });
 
   describe("Deployment", function () {
