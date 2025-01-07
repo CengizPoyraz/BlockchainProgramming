@@ -45,7 +45,7 @@ describe('CompanyLotteries', function () {
 
         // Deploy CompanyLotteries contract
         const CompanyLotteriesFactory = await ethers.getContractFactory("CompanyLotteries");
-        companyLotteries = await CompanyLotteriesFactory.deploy();
+        companyLotteries = await CompanyLotteriesFactory.deploy(owner);
 
         // Set payment token
         await companyLotteries.setPaymentToken(mockToken.target);
