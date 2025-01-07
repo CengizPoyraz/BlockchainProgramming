@@ -40,6 +40,19 @@ async function deployDiamond() {
         });
     }
 
+    const cut = []
+    for (const FacetName of FacetNames) {
+      const Facet = await ethers.getContractFactory(FacetName)
+      const facet = await Facet.deploy()
+      await facet.deployed()
+      console.log(`${FacetName} deployed: ${facet.address}`)
+      cut.push({
+        facetAddress: facet.address,
+        action: FacetCutAction.Add,
+        functionSelectors: getSelectors(facet)
+      })
+    }
+  
     // upgrade diamond with facets
     console.log('')
     console.log('Diamond Cut:', cut)
@@ -52,23 +65,11 @@ async function deployDiamond() {
     console.log('Diamond cut tx: ', tx.hash)
     receipt = await tx.wait()
     if (!receipt.status) {
-        throw Error(`Diamond upgrade failed: ${tx.hash}`)
+      throw Error(`Diamond upgrade failed: ${tx.hash}`)
     }
     console.log('Completed diamond cut')
     return diamond.address
-
-}
-
-function getSelectors(contract) {
-    const signatures = Object.keys(contract.interface.functions);
-    const selectors = signatures.reduce((acc, val) => {
-        if (val !== 'init(bytes)') {
-            acc.push(contract.interface.getSighash(val));
-        }
-        return acc;
-    }, []);
-    return selectors;
-}
+  }
 
 // We recommend this pattern to be able to use async/await everywhere
 // and properly handle errors.
