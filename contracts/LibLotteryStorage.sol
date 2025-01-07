@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 // Diamond storage library
 library LibLotteryStorage {
     bytes32 constant LOTTERY_STORAGE_POSITION = keccak256("company.lottery.storage");
