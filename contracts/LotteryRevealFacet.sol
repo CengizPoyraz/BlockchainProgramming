@@ -6,7 +6,8 @@ import "./LotteryCoreFacet.sol";
 
 contract LotteryRevealFacet {
     using LibLotteryStorage for LibLotteryStorage.LotteryState;
-
+    event RandomNumberRevealed(uint indexed lotteryId, address indexed user);
+    
     function revealRndNumberTx(
         uint lottery_no, 
         uint sticketno, 

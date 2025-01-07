@@ -1,15 +1,25 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("@nomiclabs/hardhat-ethers");
+require("hardhat-deploy");
 
-/** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
-  solidity: "0.8.27",
-  defaultNetwork: "hardhat",
+  solidity: {
+    version: "0.8.27",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200
+      }
+    }
+  },
   networks: {
-     hardhat: {
-       chainId: 1337
-     },
-    //  sepolia: {
-      
-    //  }
-   }
+    sepolia: {
+      url: `https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID`,
+      accounts: [`YOUR_PRIVATE_KEY`]
+    },
+    bloxberg: {
+      url: "https://core.bloxberg.org",
+      accounts: [`YOUR_PRIVATE_KEY`]
+    }
+  }
 };
