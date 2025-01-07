@@ -1,5 +1,5 @@
 // LotteryStateFacet.sol
-import "LotteryFacet.sol"
+import "./LotteryFacet.sol"
 
 contract LotteryStateFacet {
     function getLotteryInfo(uint256 lottery_no) external view returns (
