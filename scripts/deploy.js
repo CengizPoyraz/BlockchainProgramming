@@ -24,7 +24,7 @@ async function deployDiamond() {
         'LotteryStateFacet',
         'LotteryTicketFacet'
     ];
-    
+
     const cut = [];
     for (const FacetName of FacetNames) {
         const Facet = await ethers.getContractFactory(FacetName);
@@ -39,12 +39,23 @@ async function deployDiamond() {
         });
     }
 
-    // Cut facets
-    const diamondCut = await ethers.getContractAt('IDiamondCut', diamond.address);
-    const tx = await diamondCut.diamondCut(cut, ethers.constants.AddressZero, '0x');
-    await tx.wait();
+    // upgrade diamond with facets
+    console.log('')
+    console.log('Diamond Cut:', cut)
+    const diamondCut = await ethers.getContractAt('IDiamondCut', diamond.address)
+    let tx
+    let receipt
+    // call to init function
+    let functionCall = diamondInit.interface.encodeFunctionData('init')
+    tx = await diamondCut.diamondCut(cut, diamondInit.address, functionCall)
+    console.log('Diamond cut tx: ', tx.hash)
+    receipt = await tx.wait()
+    if (!receipt.status) {
+        throw Error(`Diamond upgrade failed: ${tx.hash}`)
+    }
+    console.log('Completed diamond cut')
+    return diamond.address
 
-    return diamond.address;
 }
 
 function getSelectors(contract) {
@@ -58,9 +69,15 @@ function getSelectors(contract) {
     return selectors;
 }
 
-deployDiamond()
-    .then(() => process.exit(0))
-    .catch(error => {
-        console.error(error);
-        process.exit(1);
-    });
+// We recommend this pattern to be able to use async/await everywhere
+// and properly handle errors.
+if (require.main === module) {
+    deployDiamond()
+        .then(() => process.exit(0))
+        .catch(error => {
+            console.error(error)
+            process.exit(1)
+        })
+}
+
+exports.deployDiamond = deployDiamond
