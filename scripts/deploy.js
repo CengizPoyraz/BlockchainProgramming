@@ -1,4 +1,6 @@
-// scripts/deploy-diamond.js
+/* global ethers */
+/* eslint prefer-const: "off" */
+
 const { ethers } = require("hardhat");
 const { getSelectors, FacetCutAction } = require('./libraries/diamond.js')
 
@@ -8,13 +10,13 @@ async function deployDiamond() {
 
     // Deploy DiamondCutFacet
     const DiamondCutFacet = await ethers.getContractFactory('DiamondCutFacet');
-    const diamondCutFacet = await DiamondCutFacet.deploy();
+    const diamondCutFacet = await DiamondCutFacet.waitForDeployment();
     await diamondCutFacet.deployed();
     console.log('DiamondCutFacet deployed:', diamondCutFacet.address);
 
     // Deploy Diamond
     const Diamond = await ethers.getContractFactory('Diamond');
-    const diamond = await Diamond.deploy(contractOwner.address, diamondCutFacet.address);
+    const diamond = await Diamond.waitForDeployment(contractOwner.address, diamondCutFacet.address);
     await diamond.deployed();
     console.log('Diamond deployed:', diamond.address);
 
@@ -29,7 +31,7 @@ async function deployDiamond() {
     const cut = []
     for (const FacetName of FacetNames) {
       const Facet = await ethers.getContractFactory(FacetName)
-      const facet = await Facet.deploy()
+      const facet = await Facet.waitForDeployment()
       await facet.deployed()
       console.log(`${FacetName} deployed: ${facet.address}`)
       cut.push({
