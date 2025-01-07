@@ -1,5 +1,7 @@
-// LotteryStateFacet.sol
-import "./LotteryFacet.sol"
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.27;
+
+import "./LotteryFacet.sol";
 
 contract LotteryStateFacet {
     function getLotteryInfo(uint256 lottery_no) external view returns (

@@ -4,7 +4,7 @@ pragma solidity ^0.8.27;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
-import "./diamond/Diamond.sol"
+import "./diamond/Diamond.sol";
 
 contract CompanyLotteries is Diamond {
     // Owner of the contract
@@ -67,7 +67,10 @@ contract CompanyLotteries is Diamond {
     constructor(
         address _contractOwner, 
         address _diamondCutFacet
-        ) payable Diamond(_contractOwner, _diamondCutFacet){}
+        ) payable Diamond(_contractOwner, _diamondCutFacet){
+
+        }
+
     // Modifier to restrict access to owner
     modifier onlyOwner() {
         require(msg.sender == owner, "Not the owner");

@@ -1,6 +1,7 @@
-// LotteryTicketFacet.sol
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.27;
 
-import "./LotteryFacet.sol"
+import "./LotteryFacet.sol";
 
 contract LotteryTicketFacet {
     function buyTicketTx(uint256 lottery_no, uint256 quantity, bytes32 hash_rnd_number) 
