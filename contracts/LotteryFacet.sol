@@ -1,5 +1,5 @@
 // LotteryFacet.sol
-import { LibDiamond } from "./diamond/LibDiamond.sol";
+import { LibDiamond } from "./diamond/libraries/LibDiamond.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract LotteryFacet {
