@@ -5,7 +5,7 @@
   "scripts": {
     "compile": "npx hardhat compile",
     "test": "npx hardhat test",
-    "diamonddeploy": "npx hardhat run scripts/deploy.js"
+    "deploy": "npx hardhat run scripts/deploy.js"
   },
   "keywords": [],
   "author": "",
