@@ -26,20 +26,6 @@ async function deployDiamond() {
         'LotteryTicketFacet'
     ];
 
-    const cut = [];
-    for (const FacetName of FacetNames) {
-        const Facet = await ethers.getContractFactory(FacetName);
-        const facet = await Facet.deploy();
-        await facet.deployed();
-        console.log(`${FacetName} deployed: ${facet.address}`);
-
-        cut.push({
-            facetAddress: facet.address,
-            action: 0, // Add
-            functionSelectors: getSelectors(facet)
-        });
-    }
-
     const cut = []
     for (const FacetName of FacetNames) {
       const Facet = await ethers.getContractFactory(FacetName)
