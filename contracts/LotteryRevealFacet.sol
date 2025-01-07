@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import "./LibLotteryStorage.sol";
+import "./LotteryCoreFacet.sol";
 
 contract LotteryRevealFacet {
     using LibLotteryStorage for LibLotteryStorage.LotteryState;
