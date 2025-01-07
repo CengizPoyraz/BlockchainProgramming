@@ -7,6 +7,9 @@ module.exports = {
   networks: {
      hardhat: {
        chainId: 1337
+     },
+     sepolia: {
+      
      }
    }
 };

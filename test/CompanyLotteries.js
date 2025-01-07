@@ -2,7 +2,7 @@ const { expect } = require('chai');
 const { ethers } = require('hardhat');
 require("@nomicfoundation/hardhat-chai-matchers");
 
-describe('CompanyLotteries', function () {
+describe('CompanyLotteriesTest', function () {
   let companyLotteries;
   let owner;
   let user1;
