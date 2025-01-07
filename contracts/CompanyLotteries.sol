@@ -60,15 +60,11 @@ contract CompanyLotteries is Diamond {
     event WinnersDetermined(uint indexed lotteryId);
     event RefundClaimed(uint indexed lotteryId, address indexed user, uint amount);
 
-    // Constructor to set the owner
-    constructor() {
-        owner = msg.sender;
-    }
     constructor(
         address _contractOwner, 
         address _diamondCutFacet
         ) payable Diamond(_contractOwner, _diamondCutFacet){
-
+            owner = _contractOwner;
         }
 
     // Modifier to restrict access to owner
