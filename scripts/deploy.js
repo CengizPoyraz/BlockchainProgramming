@@ -5,25 +5,33 @@ const { getSelectors, FacetCutAction } = require('./libraries/diamond.js')
 async function deployDiamond() {
     const accounts = await ethers.getSigners();
     const contractOwner = accounts[0];
-
+  
     // Deploy DiamondCutFacet
     const DiamondCutFacet = await ethers.getContractFactory('DiamondCutFacet');
     const diamondCutFacet = await DiamondCutFacet.deploy();
     await diamondCutFacet.deployed();
     console.log('DiamondCutFacet deployed:', diamondCutFacet.address);
-
+  
     // Deploy Diamond
-    const Diamond = await ethers.getContractFactory('Diamond');
-    const diamond = await Diamond.deploy(contractOwner.address, diamondCutFacet.address);
+    const Diamond = await ethers.getContractFactory('LotteryDiamond');
+    const diamond = await Diamond.deploy(contractOwner.address);
     await diamond.deployed();
     console.log('Diamond deployed:', diamond.address);
+  
+    // Deploy DiamondInit
+    // DiamondInit provides a function that is called when the diamond is upgraded to initialize state variables
+    const DiamondInit = await ethers.getContractFactory('DiamondInit');
+    const diamondInit = await DiamondInit.deploy();
+    await diamondInit.deployed();
+    console.log('DiamondInit deployed:', diamondInit.address);
 
     // Deploy facets
     const FacetNames = [
-        'OwnershipFacet',
-        'LotteryFacet',
-        'LotteryStateFacet',
-        'LotteryTicketFacet'
+        'DiamondLoupeFacet',
+        'LotteryCoreFacet',
+        'LotteryViewFacet',
+        'LotteryAdminFacet',
+        'LotteryRevealFacet'
     ];
 
     const cut = []
