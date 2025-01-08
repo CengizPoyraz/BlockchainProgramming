@@ -1,250 +1,233 @@
-/* global describe it before ethers */
+const { expect } = require("chai");
+const { ethers } = require("hardhat");
+const { getSelectors, FacetCutAction } = require('./utils/diamond.js');
 
-const {
-    getSelectors,
-    FacetCutAction,
-    removeSelectors,
-    findAddressPositionInFacets
-  } = require('../scripts/libraries/diamond.js')
-  
-  const { deployDiamond } = require('../scripts/deploy.js')
-  
-  const { assert } = require('chai')
-  
-  describe('DiamondTest', async function () {
-    let diamondAddress
-    let diamondCutFacet
-    let diamondLoupeFacet
-    let ownershipFacet
-    let tx
-    let receipt
-    let result
-    const addresses = []
-  
+describe("Lottery Diamond", function () {
+  let diamondAddress;
+  let diamondCutFacet;
+  let diamondLoupeFacet;
+  let lotteryCoreFacet;
+  let lotteryViewFacet;
+  let lotteryAdminFacet;
+  let lotteryRevealFacet;
+  let owner;
+  let addr1;
+  let addr2;
+  let testToken;
+
+  before(async function () {
+    [owner, addr1, addr2] = await ethers.getSigners();
+
+    // Deploy test ERC20 token
+    const TestToken = await ethers.getContractFactory("TestToken");
+    testToken = await TestToken.deploy("Test Token", "TEST");
+    await testToken.deployed();
+
+    // Deploy DiamondCutFacet
+    const DiamondCutFacet = await ethers.getContractFactory('DiamondCutFacet');
+    diamondCutFacet = await DiamondCutFacet.deploy();
+    await diamondCutFacet.deployed();
+
+    // Deploy Diamond
+    const Diamond = await ethers.getContractFactory('LotteryDiamond');
+    const diamond = await Diamond.deploy(owner.address);
+    await diamond.deployed();
+    diamondAddress = diamond.address;
+
+    // Deploy facets
+    const DiamondLoupeFacet = await ethers.getContractFactory('DiamondLoupeFacet');
+    const LotteryCoreFacet = await ethers.getContractFactory('LotteryCoreFacet');
+    const LotteryViewFacet = await ethers.getContractFactory('LotteryViewFacet');
+    const LotteryAdminFacet = await ethers.getContractFactory('LotteryAdminFacet');
+    const LotteryRevealFacet = await ethers.getContractFactory('LotteryRevealFacet');
+
+    diamondLoupeFacet = await DiamondLoupeFacet.deploy();
+    lotteryCoreFacet = await LotteryCoreFacet.deploy();
+    lotteryViewFacet = await LotteryViewFacet.deploy();
+    lotteryAdminFacet = await LotteryAdminFacet.deploy();
+    lotteryRevealFacet = await LotteryRevealFacet.deploy();
+
+    // Get facet cuts
+    const cut = [
+      {
+        facetAddress: diamondLoupeFacet.address,
+        action: FacetCutAction.Add,
+        functionSelectors: getSelectors(diamondLoupeFacet)
+      },
+      {
+        facetAddress: lotteryCoreFacet.address,
+        action: FacetCutAction.Add,
+        functionSelectors: getSelectors(lotteryCoreFacet)
+      },
+      {
+        facetAddress: lotteryViewFacet.address,
+        action: FacetCutAction.Add,
+        functionSelectors: getSelectors(lotteryViewFacet)
+      },
+      {
+        facetAddress: lotteryAdminFacet.address,
+        action: FacetCutAction.Add,
+        functionSelectors: getSelectors(lotteryAdminFacet)
+      },
+      {
+        facetAddress: lotteryRevealFacet.address,
+        action: FacetCutAction.Add,
+        functionSelectors: getSelectors(lotteryRevealFacet)
+      }
+    ];
+
+    // Attach facets to diamond
+    const diamondCut = await ethers.getContractAt('IDiamondCut', diamondAddress);
+    await diamondCut.diamondCut(cut, ethers.constants.AddressZero, '0x');
+
+    // Get facet instances
+    lotteryCoreFacet = await ethers.getContractAt('LotteryCoreFacet', diamondAddress);
+    lotteryViewFacet = await ethers.getContractAt('LotteryViewFacet', diamondAddress);
+    lotteryAdminFacet = await ethers.getContractAt('LotteryAdminFacet', diamondAddress);
+    lotteryRevealFacet = await ethers.getContractAt('LotteryRevealFacet', diamondAddress);
+  });
+
+  describe("Diamond Setup", function () {
+    it("Should have all facets", async function () {
+      const loupe = await ethers.getContractAt('IDiamondLoupe', diamondAddress);
+      const facets = await loupe.facets();
+      expect(facets.length).to.equal(6); // Including DiamondCutFacet
+    });
+  });
+
+  describe("Lottery Creation", function () {
+    it("Should allow owner to create a lottery", async function () {
+      const endTime = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
+      
+      await expect(lotteryCoreFacet.createLottery(
+        endTime,
+        100, // totalTickets
+        5,   // winnersCount
+        50,  // minTicketPercentage
+        ethers.utils.parseEther("0.1"), // ticketPrice
+        ethers.utils.id("description"), // lotteryDescHash
+        "https://example.com" // lotteryDescUrl
+      )).to.emit(lotteryCoreFacet, "LotteryCreated").withArgs(1);
+
+      const currentLotteryNo = await lotteryViewFacet.getCurrentLotteryNo();
+      expect(currentLotteryNo).to.equal(1);
+    });
+
+    it("Should not allow non-owner to create lottery", async function () {
+      const endTime = Math.floor(Date.now() / 1000) + 86400;
+      
+      await expect(
+        lotteryCoreFacet.connect(addr1).createLottery(
+          endTime,
+          100,
+          5,
+          50,
+          ethers.utils.parseEther("0.1"),
+          ethers.utils.id("description"),
+          "https://example.com"
+        )
+      ).to.be.revertedWith("Not the owner");
+    });
+  });
+
+  describe("Ticket Purchase", function () {
     before(async function () {
-      diamondAddress = await deployDiamond()
-      diamondCutFacet = await ethers.getContractAt('DiamondCutFacet', diamondAddress)
-      diamondLoupeFacet = await ethers.getContractAt('DiamondLoupeFacet', diamondAddress)
-      ownershipFacet = await ethers.getContractAt('OwnershipFacet', diamondAddress)
-    })
-  
-    it('should have three facets -- call to facetAddresses function', async () => {
-      for (const address of await diamondLoupeFacet.facetAddresses()) {
-        addresses.push(address)
-      }
-  
-      assert.equal(addresses.length, 3)
-    })
-  
-    it('facets should have the right function selectors -- call to facetFunctionSelectors function', async () => {
-      let selectors = getSelectors(diamondCutFacet)
-      result = await diamondLoupeFacet.facetFunctionSelectors(addresses[0])
-      assert.sameMembers(result, selectors)
-      selectors = getSelectors(diamondLoupeFacet)
-      result = await diamondLoupeFacet.facetFunctionSelectors(addresses[1])
-      assert.sameMembers(result, selectors)
-      selectors = getSelectors(ownershipFacet)
-      result = await diamondLoupeFacet.facetFunctionSelectors(addresses[2])
-      assert.sameMembers(result, selectors)
-    })
-  
-    it('selectors should be associated to facets correctly -- multiple calls to facetAddress function', async () => {
-      assert.equal(
-        addresses[0],
-        await diamondLoupeFacet.facetAddress('0x1f931c1c')
-      )
-      assert.equal(
-        addresses[1],
-        await diamondLoupeFacet.facetAddress('0xcdffacc6')
-      )
-      assert.equal(
-        addresses[1],
-        await diamondLoupeFacet.facetAddress('0x01ffc9a7')
-      )
-      assert.equal(
-        addresses[2],
-        await diamondLoupeFacet.facetAddress('0xf2fde38b')
-      )
-    })
-  
-    it('should add test1 functions', async () => {
-      const Test1Facet = await ethers.getContractFactory('Test1Facet')
-      const test1Facet = await Test1Facet.deploy()
-      await test1Facet.deployed()
-      addresses.push(test1Facet.address)
-      const selectors = getSelectors(test1Facet).remove(['supportsInterface(bytes4)'])
-      tx = await diamondCutFacet.diamondCut(
-        [{
-          facetAddress: test1Facet.address,
-          action: FacetCutAction.Add,
-          functionSelectors: selectors
-        }],
-        ethers.constants.AddressZero, '0x', { gasLimit: 800000 })
-      receipt = await tx.wait()
-      if (!receipt.status) {
-        throw Error(`Diamond upgrade failed: ${tx.hash}`)
-      }
-      result = await diamondLoupeFacet.facetFunctionSelectors(test1Facet.address)
-      assert.sameMembers(result, selectors)
-    })
-  
-    it('should test function call', async () => {
-      const test1Facet = await ethers.getContractAt('Test1Facet', diamondAddress)
-      await test1Facet.test1Func10()
-    })
-  
-    it('should replace supportsInterface function', async () => {
-      const Test1Facet = await ethers.getContractFactory('Test1Facet')
-      const selectors = getSelectors(Test1Facet).get(['supportsInterface(bytes4)'])
-      const testFacetAddress = addresses[3]
-      tx = await diamondCutFacet.diamondCut(
-        [{
-          facetAddress: testFacetAddress,
-          action: FacetCutAction.Replace,
-          functionSelectors: selectors
-        }],
-        ethers.constants.AddressZero, '0x', { gasLimit: 800000 })
-      receipt = await tx.wait()
-      if (!receipt.status) {
-        throw Error(`Diamond upgrade failed: ${tx.hash}`)
-      }
-      result = await diamondLoupeFacet.facetFunctionSelectors(testFacetAddress)
-      assert.sameMembers(result, getSelectors(Test1Facet))
-    })
-  
-    it('should add test2 functions', async () => {
-      const Test2Facet = await ethers.getContractFactory('Test2Facet')
-      const test2Facet = await Test2Facet.deploy()
-      await test2Facet.deployed()
-      addresses.push(test2Facet.address)
-      const selectors = getSelectors(test2Facet)
-      tx = await diamondCutFacet.diamondCut(
-        [{
-          facetAddress: test2Facet.address,
-          action: FacetCutAction.Add,
-          functionSelectors: selectors
-        }],
-        ethers.constants.AddressZero, '0x', { gasLimit: 800000 })
-      receipt = await tx.wait()
-      if (!receipt.status) {
-        throw Error(`Diamond upgrade failed: ${tx.hash}`)
-      }
-      result = await diamondLoupeFacet.facetFunctionSelectors(test2Facet.address)
-      assert.sameMembers(result, selectors)
-    })
-  
-    it('should remove some test2 functions', async () => {
-      const test2Facet = await ethers.getContractAt('Test2Facet', diamondAddress)
-      const functionsToKeep = ['test2Func1()', 'test2Func5()', 'test2Func6()', 'test2Func19()', 'test2Func20()']
-      const selectors = getSelectors(test2Facet).remove(functionsToKeep)
-      tx = await diamondCutFacet.diamondCut(
-        [{
-          facetAddress: ethers.constants.AddressZero,
-          action: FacetCutAction.Remove,
-          functionSelectors: selectors
-        }],
-        ethers.constants.AddressZero, '0x', { gasLimit: 800000 })
-      receipt = await tx.wait()
-      if (!receipt.status) {
-        throw Error(`Diamond upgrade failed: ${tx.hash}`)
-      }
-      result = await diamondLoupeFacet.facetFunctionSelectors(addresses[4])
-      assert.sameMembers(result, getSelectors(test2Facet).get(functionsToKeep))
-    })
-  
-    it('should remove some test1 functions', async () => {
-      const test1Facet = await ethers.getContractAt('Test1Facet', diamondAddress)
-      const functionsToKeep = ['test1Func2()', 'test1Func11()', 'test1Func12()']
-      const selectors = getSelectors(test1Facet).remove(functionsToKeep)
-      tx = await diamondCutFacet.diamondCut(
-        [{
-          facetAddress: ethers.constants.AddressZero,
-          action: FacetCutAction.Remove,
-          functionSelectors: selectors
-        }],
-        ethers.constants.AddressZero, '0x', { gasLimit: 800000 })
-      receipt = await tx.wait()
-      if (!receipt.status) {
-        throw Error(`Diamond upgrade failed: ${tx.hash}`)
-      }
-      result = await diamondLoupeFacet.facetFunctionSelectors(addresses[3])
-      assert.sameMembers(result, getSelectors(test1Facet).get(functionsToKeep))
-    })
-  
-    it('remove all functions and facets except \'diamondCut\' and \'facets\'', async () => {
-      let selectors = []
-      let facets = await diamondLoupeFacet.facets()
-      for (let i = 0; i < facets.length; i++) {
-        selectors.push(...facets[i].functionSelectors)
-      }
-      selectors = removeSelectors(selectors, ['facets()', 'diamondCut(tuple(address,uint8,bytes4[])[],address,bytes)'])
-      tx = await diamondCutFacet.diamondCut(
-        [{
-          facetAddress: ethers.constants.AddressZero,
-          action: FacetCutAction.Remove,
-          functionSelectors: selectors
-        }],
-        ethers.constants.AddressZero, '0x', { gasLimit: 800000 })
-      receipt = await tx.wait()
-      if (!receipt.status) {
-        throw Error(`Diamond upgrade failed: ${tx.hash}`)
-      }
-      facets = await diamondLoupeFacet.facets()
-      assert.equal(facets.length, 2)
-      assert.equal(facets[0][0], addresses[0])
-      assert.sameMembers(facets[0][1], ['0x1f931c1c'])
-      assert.equal(facets[1][0], addresses[1])
-      assert.sameMembers(facets[1][1], ['0x7a0ed627'])
-    })
-  
-    it('add most functions and facets', async () => {
-      const diamondLoupeFacetSelectors = getSelectors(diamondLoupeFacet).remove(['supportsInterface(bytes4)'])
-      const Test1Facet = await ethers.getContractFactory('Test1Facet')
-      const Test2Facet = await ethers.getContractFactory('Test2Facet')
-      // Any number of functions from any number of facets can be added/replaced/removed in a
-      // single transaction
-      const cut = [
-        {
-          facetAddress: addresses[1],
-          action: FacetCutAction.Add,
-          functionSelectors: diamondLoupeFacetSelectors.remove(['facets()'])
-        },
-        {
-          facetAddress: addresses[2],
-          action: FacetCutAction.Add,
-          functionSelectors: getSelectors(ownershipFacet)
-        },
-        {
-          facetAddress: addresses[3],
-          action: FacetCutAction.Add,
-          functionSelectors: getSelectors(Test1Facet)
-        },
-        {
-          facetAddress: addresses[4],
-          action: FacetCutAction.Add,
-          functionSelectors: getSelectors(Test2Facet)
-        }
-      ]
-      tx = await diamondCutFacet.diamondCut(cut, ethers.constants.AddressZero, '0x', { gasLimit: 8000000 })
-      receipt = await tx.wait()
-      if (!receipt.status) {
-        throw Error(`Diamond upgrade failed: ${tx.hash}`)
-      }
-      const facets = await diamondLoupeFacet.facets()
-      const facetAddresses = await diamondLoupeFacet.facetAddresses()
-      assert.equal(facetAddresses.length, 5)
-      assert.equal(facets.length, 5)
-      assert.sameMembers(facetAddresses, addresses)
-      assert.equal(facets[0][0], facetAddresses[0], 'first facet')
-      assert.equal(facets[1][0], facetAddresses[1], 'second facet')
-      assert.equal(facets[2][0], facetAddresses[2], 'third facet')
-      assert.equal(facets[3][0], facetAddresses[3], 'fourth facet')
-      assert.equal(facets[4][0], facetAddresses[4], 'fifth facet')
-      assert.sameMembers(facets[findAddressPositionInFacets(addresses[0], facets)][1], getSelectors(diamondCutFacet))
-      assert.sameMembers(facets[findAddressPositionInFacets(addresses[1], facets)][1], diamondLoupeFacetSelectors)
-      assert.sameMembers(facets[findAddressPositionInFacets(addresses[2], facets)][1], getSelectors(ownershipFacet))
-      assert.sameMembers(facets[findAddressPositionInFacets(addresses[3], facets)][1], getSelectors(Test1Facet))
-      assert.sameMembers(facets[findAddressPositionInFacets(addresses[4], facets)][1], getSelectors(Test2Facet))
-    })
-  })
-  
+      // Set payment token
+      await lotteryAdminFacet.setPaymentToken(testToken.address);
+      
+      // Mint some tokens to addr1
+      await testToken.mint(addr1.address, ethers.utils.parseEther("10"));
+      await testToken.connect(addr1).approve(diamondAddress, ethers.utils.parseEther("10"));
+    });
+
+    it("Should allow users to buy tickets", async function () {
+      const randomNumber = ethers.utils.randomBytes(32);
+      const commitment = ethers.utils.keccak256(randomNumber);
+      
+      await expect(
+        lotteryCoreFacet.connect(addr1).buyTicketTx(1, 5, commitment)
+      ).to.emit(lotteryCoreFacet, "TicketsPurchased")
+        .withArgs(1, addr1.address, 5);
+
+      const sales = await lotteryViewFacet.getLotterySales(1);
+      expect(sales).to.equal(5);
+    });
+
+    it("Should not allow buying more than 30 tickets at once", async function () {
+      const randomNumber = ethers.utils.randomBytes(32);
+      const commitment = ethers.utils.keccak256(randomNumber);
+      
+      await expect(
+        lotteryCoreFacet.connect(addr1).buyTicketTx(1, 31, commitment)
+      ).to.be.revertedWith("Invalid ticket count");
+    });
+  });
+
+  describe("Random Number Reveal", function () {
+    it("Should allow revealing random number during reveal stage", async function () {
+      // Fast forward to reveal stage
+      const lotteryInfo = await lotteryViewFacet.getLotteryInfo(1);
+      const halfDuration = (lotteryInfo[0].toNumber() - Math.floor(Date.now() / 1000)) / 2;
+      await ethers.provider.send("evm_increaseTime", [halfDuration]);
+      await ethers.provider.send("evm_mine");
+
+      const randomNumber = ethers.utils.randomBytes(32);
+      
+      await expect(
+        lotteryRevealFacet.connect(addr1).revealRndNumberTx(1, 0, 5, randomNumber)
+      ).to.emit(lotteryRevealFacet, "RandomNumberRevealed")
+        .withArgs(1, addr1.address);
+    });
+
+    it("Should not allow revealing twice", async function () {
+      const randomNumber = ethers.utils.randomBytes(32);
+      
+      await expect(
+        lotteryRevealFacet.connect(addr1).revealRndNumberTx(1, 0, 5, randomNumber)
+      ).to.be.revertedWith("Already revealed");
+    });
+  });
+
+  describe("Lottery Finalization", function () {
+    before(async function () {
+      // Fast forward to end
+      const lotteryInfo = await lotteryViewFacet.getLotteryInfo(1);
+      const timeToEnd = lotteryInfo[0].toNumber() - Math.floor(Date.now() / 1000) + 1;
+      await ethers.provider.send("evm_increaseTime", [timeToEnd]);
+      await ethers.provider.send("evm_mine");
+    });
+
+    it("Should allow owner to withdraw proceeds after finalization", async function () {
+      const lotteryInfo = await lotteryViewFacet.getLotteryInfo(1);
+      const totalProceeds = lotteryInfo[4].mul(5); // ticketPrice * number of tickets sold
+      
+      await expect(
+        lotteryAdminFacet.withdrawTicketProceeds(1)
+      ).to.changeTokenBalance(testToken, owner, totalProceeds);
+    });
+  });
+
+  describe("View Functions", function () {
+    it("Should return correct lottery information", async function () {
+      const [endTime, totalTickets, winners, minPercentage, ticketPrice] = 
+        await lotteryViewFacet.getLotteryInfo(1);
+      
+      expect(totalTickets).to.equal(100);
+      expect(winners).to.equal(5);
+      expect(minPercentage).to.equal(50);
+      expect(ticketPrice).to.equal(ethers.utils.parseEther("0.1"));
+    });
+
+    it("Should return correct lottery URL info", async function () {
+      const [hash, url] = await lotteryViewFacet.getLotteryURL(1);
+      
+      expect(hash).to.equal(ethers.utils.id("description"));
+      expect(url).to.equal("https://example.com");
+    });
+
+    it("Should return correct sales information", async function () {
+      const sales = await lotteryViewFacet.getLotterySales(1);
+      expect(sales).to.equal(5);
+    });
+  });
+});
