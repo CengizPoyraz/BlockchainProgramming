@@ -1,1 +1,1 @@
-docker run -it --mount type=bind,src=//c/Users/cengi/DockerMount,target=/home/root/host --gpus all -p 8551 cpoyraz/blockchain:v1.5 bash
+docker run -it --mount type=bind,src=//c/Users/cengi/DockerMount,target=/home/root/host --gpus all -p 8551 -p 3000 cpoyraz/blockchain:v1.5 bash
