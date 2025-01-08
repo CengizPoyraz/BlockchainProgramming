@@ -1,10 +1,18 @@
 require("@nomicfoundation/hardhat-toolbox");
+<<<<<<< HEAD
 require("@nomicfoundation/hardhat-ethers");
+=======
+require("@nomiclabs/hardhat-ethers");
+>>>>>>> aa5770cf5e84283289821233af78c546b472e7b0
 require("hardhat-deploy");
 
 module.exports = {
   solidity: {
+<<<<<<< HEAD
     version: "0.8.28",
+=======
+    version: "0.8.27",
+>>>>>>> aa5770cf5e84283289821233af78c546b472e7b0
     defaultNetwork: "sepolia",
     settings: {
       optimizer: {
@@ -23,4 +31,8 @@ module.exports = {
     //   accounts: [`YOUR_PRIVATE_KEY`]
     // }
   }
+<<<<<<< HEAD
 };
+=======
+};
+>>>>>>> aa5770cf5e84283289821233af78c546b472e7b0
