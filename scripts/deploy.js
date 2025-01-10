@@ -3,7 +3,7 @@
 
 const { getSelectors, FacetCutAction } = require('./libraries/diamond.js')
 
-async function deployDiamond () {
+async function deployDiamond() {
   const accounts = await ethers.getSigners()
   const contractOwner = accounts[0]
 
@@ -13,11 +13,42 @@ async function deployDiamond () {
   await diamondCutFacet.deployed()
   console.log('DiamondCutFacet deployed:', diamondCutFacet.address)
 
+  // deploy DiamondLoupeFacet
+  const DiamondLoupeFacet = await ethers.getContractFactory('DiamondLoupeFacet')
+  const diamondLoupeFacet = await DiamondLoupeFacet.deploy()
+  await diamondLoupeFacet.deployed()
+  console.log('DiamondLoupeFacet deployed:', diamondLoupeFacet.address)
+
   // deploy Diamond
   const Diamond = await ethers.getContractFactory('Diamond')
   const diamond = await Diamond.deploy(contractOwner.address, diamondCutFacet.address)
   await diamond.deployed()
   console.log('Diamond deployed:', diamond.address)
+
+
+  // deploy LotteryCoreFacet
+  const LotteryCoreFacet = await ethers.getContractFactory('LotteryCoreFacet')
+  const lotteryCoreFacet = await LotteryCoreFacet.deploy()
+  await lotteryCoreFacet.deployed()
+  console.log('LotteryCoreFacet deployed:', lotteryCoreFacet.address)
+
+  // deploy LotteryViewFacet
+  const LotteryViewFacet = await ethers.getContractFactory('LotteryViewFacet')
+  const lotteryViewFacet = await LotteryViewFacet.deploy()
+  await lotteryViewFacet.deployed()
+  console.log('LotteryViewFacet deployed:', lotteryViewFacet.address)
+
+   // deploy LotteryRevealFacet
+   const LotteryRevealFacet = await ethers.getContractFactory('LotteryRevealFacet')
+   const lotteryRevealFacet = await LotteryRevealFacet.deploy()
+   await lotteryRevealFacet.deployed()
+   console.log('LotteryRevealFacet deployed:', lotteryRevealFacet.address) 
+
+   // deploy LotteryAdminFacet
+   const LotteryAdminFacet = await ethers.getContractFactory('LotteryAdminFacet')
+   const lotteryAdminFacet = await LotteryAdminFacet.deploy()
+   await lotteryAdminFacet.deployed()
+   console.log('LotteryAdminFacet deployed:', lotteryAdminFacet.address) 
 
   // deploy DiamondInit
   // DiamondInit provides a function that is called when the diamond is upgraded to initialize state variables
@@ -31,8 +62,13 @@ async function deployDiamond () {
   console.log('')
   console.log('Deploying facets')
   const FacetNames = [
+    'DiamondCutFacet',
     'DiamondLoupeFacet',
-    'OwnershipFacet'
+    'OwnershipFacet',
+    "LotteryCoreFacet",
+    "LotteryViewFacet",
+    "LotteryRevealFacet",
+    "LotteryAdminFacet"
   ]
   const cut = []
   for (const FacetName of FacetNames) {
