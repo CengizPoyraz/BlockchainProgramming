@@ -4,278 +4,306 @@ pragma solidity ^0.8.6;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 library LibLottery {
-    bytes32 constant LOTTERY_STORAGE_POSITION = keccak256("diamond.standard.lottery.storage");
-    
-    struct Ticket {
-        address owner;
-        bytes32 hashRndNumber;
-        bool revealed;
-        uint256 rndNumber;
+    bytes32 constant LOTTERY_STORAGE_POSITION = keccak256("lottery.standard.storage");
+
+    // Events
+    event WinningNumbersGenerated(uint indexed lotteryId, uint256[] winningNumbers);
+    event WinnerSelected(uint indexed lotteryId, address indexed winner, uint256 prizeAmount);
+    event PrizeClaimed(uint indexed lotteryId, address indexed winner, uint256 amount);
+
+    // Structs
+    struct Lottery {
+        uint256 beginTime;             // Start time of lottery
+        uint256 endTime;              // End time of lottery
+        uint256 totalTickets;          // Total available tickets
+        uint256 purchasedTickets;      // Number of tickets sold
+        uint256 winnersCount;          // Number of winners
+        uint256 minTicketPercentage;   // Minimum percentage of tickets that must be sold
+        uint256 ticketPrice;           // Price per ticket
+        uint256 prizePool;             // Total prize pool
+        bytes32 lotteryDescHash;       // Hash of lottery description
+        string lotteryDescUrl;         // URL to lottery description
+        bool isCanceled;              // Whether lottery is canceled
+        bool isFinalized;             // Whether lottery is finalized
+        uint256[] winningNumbers;      // Winning ticket numbers
+        mapping(uint256 => bool) usedTicketNumbers; // Track used ticket numbers
     }
-    
-    struct LotteryInfo {
-        uint256 endTime;
-        uint256 noOfTickets;
-        uint256 noOfWinners;
-        uint256 minPercentage;
-        uint256 ticketPrice;
-        bytes32 htmlHash;
-        string url;
-        uint256 ticketsSold;
-        bool finished;
-        mapping(uint256 => Ticket) tickets;
-        mapping(uint256 => uint256) winningTickets;
-        address paymentToken;
+
+    struct TicketInfo {
+        uint256 ticketCount;           // Number of tickets purchased
+        bytes32 committedRandomNumber; // Committed random number hash
+        bool revealed;                // Whether random number was revealed
+        uint256 randomNumber;         // Revealed random number
+        uint256[] ticketNumbers;      // Assigned ticket numbers
+        bool hasClaimed;              // Whether prizes have been claimed
     }
-    
+
     struct LotteryStorage {
+        mapping(uint256 => Lottery) lotteries;
+        mapping(uint256 => mapping(address => TicketInfo)) userTickets;
+        mapping(uint256 => address[]) lotteryWinners;
         uint256 currentLotteryNo;
-        mapping(uint256 => LotteryInfo) lotteries;
-        mapping(uint256 => uint256[]) purchaseTxs;
+        IERC20 paymentToken;
+        mapping(uint256 => mapping(uint256 => address)) purchaseTxs;
+        uint256 purchaseTxCount;
     }
-    
-    function diamondStorage() internal pure returns (LotteryStorage storage ds) {
+
+    // Main storage function
+    function lotteryStorage() internal pure returns (LotteryStorage storage ls) {
         bytes32 position = LOTTERY_STORAGE_POSITION;
         assembly {
-            ds.slot := position
+            ls.slot := position
         }
     }
-    
+
+    // Core lottery functions
     function createLottery(
-        uint256 unixEnd,
-        uint256 noOfTickets,
-        uint256 noOfWinners,
-        uint256 minPercentage,
-        uint256 ticketPrice,
-        bytes32 htmlHash,
+        uint256 unixend,
+        uint256 nooftickets,
+        uint256 noofwinners,
+        uint256 minpercentage,
+        uint256 ticketprice,
+        bytes32 htmlhash,
         string memory url
     ) internal returns (uint256) {
-        require(unixEnd > block.timestamp, "Invalid end time");
-        require(noOfTickets > 0, "Invalid ticket count");
-        require(noOfWinners > 0 && noOfWinners <= noOfTickets, "Invalid winners count");
-        require(minPercentage > 0 && minPercentage <= 100, "Invalid percentage");
-        require(ticketPrice > 0, "Invalid ticket price");
+        require(unixend > block.timestamp, "End time must be future");
+        require(noofwinners > 0 && noofwinners <= nooftickets, "Invalid winners count");
+        require(minpercentage > 0 && minpercentage <= 100, "Invalid percentage");
         
-        LotteryStorage storage ls = diamondStorage();
+        LotteryStorage storage ls = lotteryStorage();
         ls.currentLotteryNo++;
+        uint256 lotteryId = ls.currentLotteryNo;
         
-        LotteryInfo storage newLottery = ls.lotteries[ls.currentLotteryNo];
-        newLottery.endTime = unixEnd;
-        newLottery.noOfTickets = noOfTickets;
-        newLottery.noOfWinners = noOfWinners;
-        newLottery.minPercentage = minPercentage;
-        newLottery.ticketPrice = ticketPrice;
-        newLottery.htmlHash = htmlHash;
-        newLottery.url = url;
-        
-        return ls.currentLotteryNo;
+        Lottery storage lottery = ls.lotteries[lotteryId];
+        lottery.beginTime = block.timestamp;
+        lottery.endTime = unixend;
+        lottery.totalTickets = nooftickets;
+        lottery.purchasedTickets = 0;
+        lottery.winnersCount = noofwinners;
+        lottery.minTicketPercentage = minpercentage;
+        lottery.ticketPrice = ticketprice;
+        lottery.lotteryDescHash = htmlhash;
+        lottery.lotteryDescUrl = url;
+        lottery.isCanceled = false;
+        lottery.isFinalized = false;
+        lottery.prizePool = 0;
+
+        return lotteryId;
     }
-    
-    function buyTickets(
-        address buyer,
+
+    function buyTicketTx(
+        uint256 lotteryId,
         uint256 quantity,
-        bytes32 hashRndNumber
-    ) internal returns (uint256) {
-        LotteryStorage storage ls = diamondStorage();
-        LotteryInfo storage lottery = ls.lotteries[ls.currentLotteryNo];
+        bytes32 hash_rnd_number
+    ) internal returns (uint256[] memory) {
+        LotteryStorage storage ls = lotteryStorage();
+        Lottery storage lottery = ls.lotteries[lotteryId];
         
-        require(block.timestamp < lottery.endTime - (lottery.endTime - block.timestamp) / 2, "Purchase phase ended");
-        require(lottery.ticketsSold + quantity <= lottery.noOfTickets, "Not enough tickets available");
-        
+        require(!lottery.isCanceled, "Lottery is canceled");
+        require(block.timestamp <= lottery.endTime, "Lottery ended");
+        require(lottery.purchasedTickets + quantity <= lottery.totalTickets, "Not enough tickets");
+
+        // Handle payment
         uint256 totalCost = quantity * lottery.ticketPrice;
-        IERC20(lottery.paymentToken).transferFrom(buyer, address(this), totalCost);
-        
-        uint256 startTicketNo = lottery.ticketsSold;
-        for (uint256 i = 0; i < quantity; i++) {
-            lottery.tickets[startTicketNo + i] = Ticket({
-                owner: buyer,
-                hashRndNumber: hashRndNumber,
-                revealed: false,
-                rndNumber: 0
-            });
-        }
-        
-        lottery.ticketsSold += quantity;
-        ls.purchaseTxs[ls.currentLotteryNo].push(startTicketNo);
-        ls.purchaseTxs[ls.currentLotteryNo].push(quantity);
-        
-        return startTicketNo;
-    }
-    
-    function revealNumbers(
-        address revealer,
-        uint256 startTicketNo,
-        uint256 quantity,
-        uint256 rndNumber
-    ) internal {
-        LotteryStorage storage ls = diamondStorage();
-        LotteryInfo storage lottery = ls.lotteries[ls.currentLotteryNo];
-        
-        require(block.timestamp >= lottery.endTime - (lottery.endTime - block.timestamp) / 2, "Reveal phase not started");
-        require(block.timestamp < lottery.endTime, "Lottery ended");
-        
-        bytes32 hashRndNumber = keccak256(abi.encodePacked(rndNumber));
+        require(
+            ls.paymentToken.transferFrom(msg.sender, address(this), totalCost),
+            "Payment failed"
+        );
+
+        // Update prize pool
+        lottery.prizePool += totalCost;
+
+        // Store purchase transaction
+        ls.purchaseTxs[lotteryId][ls.purchaseTxCount] = msg.sender;
+        uint256 txId = ls.purchaseTxCount;
+        ls.purchaseTxCount++;
+
+        // Generate and store ticket numbers
+        TicketInfo storage ticketInfo = ls.userTickets[lotteryId][msg.sender];
+        uint256[] memory ticketNumbers = new uint256[](quantity);
         
         for (uint256 i = 0; i < quantity; i++) {
-            Ticket storage ticket = lottery.tickets[startTicketNo + i];
-            require(ticket.owner == revealer, "Not ticket owner");
-            require(!ticket.revealed, "Already revealed");
-            require(ticket.hashRndNumber == hashRndNumber, "Invalid random number");
+            uint256 ticketNumber = uint256(keccak256(abi.encodePacked(
+                block.timestamp,
+                msg.sender,
+                lottery.purchasedTickets + i,
+                hash_rnd_number
+            ))) % lottery.totalTickets;
             
-            ticket.revealed = true;
-            ticket.rndNumber = rndNumber;
+            // Ensure unique ticket numbers
+            while (lottery.usedTicketNumbers[ticketNumber]) {
+                ticketNumber = (ticketNumber + 1) % lottery.totalTickets;
+            }
+            
+            lottery.usedTicketNumbers[ticketNumber] = true;
+            ticketNumbers[i] = ticketNumber;
+            ticketInfo.ticketNumbers.push(ticketNumber);
         }
-        
-        if (block.timestamp >= lottery.endTime && !lottery.finished) {
-            finalizeLottery(ls.currentLotteryNo);
-        }
+
+        // Update ticket information
+        ticketInfo.ticketCount += quantity;
+        ticketInfo.committedRandomNumber = hash_rnd_number;
+        ticketInfo.revealed = false;
+        lottery.purchasedTickets += quantity;
+
+        return ticketNumbers;
     }
-    
-    function finalizeLottery(uint256 lotteryNo) internal {
-        LotteryStorage storage ls = diamondStorage();
-        LotteryInfo storage lottery = ls.lotteries[lotteryNo];
-        
-        require(!lottery.finished, "Already finalized");
-        require(block.timestamp >= lottery.endTime, "Lottery not ended");
-        
-        lottery.finished = true;
-        
-        uint256 minTickets = (lottery.noOfTickets * lottery.minPercentage) / 100;
-        if (lottery.ticketsSold < minTickets) {
-            return; // Lottery canceled, refunds enabled
-        }
-        
-        uint256 seed = 0;
-        for (uint256 i = 0; i < lottery.ticketsSold; i++) {
-            if (lottery.tickets[i].revealed) {
-                seed ^= lottery.tickets[i].rndNumber;
+
+    function revealRndNumberTx(
+        uint256 lotteryId,
+        uint256 rnd_number
+    ) internal {
+        LotteryStorage storage ls = lotteryStorage();
+        TicketInfo storage ticketInfo = ls.userTickets[lotteryId][msg.sender];
+
+        require(!ticketInfo.revealed, "Already revealed");
+        require(
+            keccak256(abi.encodePacked(rnd_number)) == ticketInfo.committedRandomNumber,
+            "Invalid random number"
+        );
+
+        ticketInfo.randomNumber = rnd_number;
+        ticketInfo.revealed = true;
+    }
+
+    function determineLotteryWinners(uint256 lotteryId) internal {
+        LotteryStorage storage ls = lotteryStorage();
+        Lottery storage lottery = ls.lotteries[lotteryId];
+
+        require(!lottery.isFinalized && !lottery.isCanceled, "Invalid state");
+        require(block.timestamp > lottery.endTime, "Lottery not ended");
+
+        // Check minimum participation
+        uint256 minRequired = (lottery.totalTickets * lottery.minTicketPercentage) / 100;
+        require(lottery.purchasedTickets >= minRequired, "Minimum tickets not met");
+
+        // Generate winning numbers using aggregated entropy
+        uint256 entropy = 0;
+        for (uint256 i = 0; i < ls.purchaseTxCount; i++) {
+            address participant = ls.purchaseTxs[lotteryId][i];
+            TicketInfo storage ticketInfo = ls.userTickets[lotteryId][participant];
+            if (ticketInfo.revealed) {
+                entropy ^= ticketInfo.randomNumber;
             }
         }
-        
-        // Select winning tickets
-        for (uint256 i = 0; i < lottery.noOfWinners; i++) {
-            uint256 winningIndex = uint256(keccak256(abi.encodePacked(seed, i))) % lottery.ticketsSold;
-            lottery.winningTickets[i] = winningIndex;
+
+        lottery.winningNumbers = new uint256[](lottery.winnersCount);
+        for (uint256 i = 0; i < lottery.winnersCount; i++) {
+            lottery.winningNumbers[i] = uint256(keccak256(abi.encodePacked(
+                entropy,
+                block.timestamp,
+                i
+            ))) % lottery.totalTickets;
         }
+
+        emit WinningNumbersGenerated(lotteryId, lottery.winningNumbers);
+
+        // Mark lottery as finalized
+        lottery.isFinalized = true;
     }
-    
-    function withdrawRefund(address user, uint256 lotteryNo, uint256 startTicketNo) internal {
-        LotteryStorage storage ls = diamondStorage();
-        LotteryInfo storage lottery = ls.lotteries[lotteryNo];
-        
-        require(lottery.finished, "Lottery not finished");
-        require(lottery.ticketsSold * 100 < lottery.noOfTickets * lottery.minPercentage, "Not eligible for refund");
-        
-        Ticket storage ticket = lottery.tickets[startTicketNo];
-        require(ticket.owner == user, "Not ticket owner");
-        require(!ticket.revealed, "Already refunded");
-        
-        ticket.revealed = true; // Use revealed flag to track refunds
-        IERC20(lottery.paymentToken).transfer(user, lottery.ticketPrice);
+
+    function claimPrize(uint256 lotteryId) internal returns (uint256) {
+        LotteryStorage storage ls = lotteryStorage();
+        Lottery storage lottery = ls.lotteries[lotteryId];
+        TicketInfo storage ticketInfo = ls.userTickets[lotteryId][msg.sender];
+
+        require(lottery.isFinalized, "Lottery not finalized");
+        require(!ticketInfo.hasClaimed, "Already claimed");
+        require(ticketInfo.ticketCount > 0, "No tickets owned");
+
+        uint256 winningTicketCount = 0;
+        for (uint256 i = 0; i < ticketInfo.ticketNumbers.length; i++) {
+            for (uint256 j = 0; j < lottery.winningNumbers.length; j++) {
+                if (ticketInfo.ticketNumbers[i] == lottery.winningNumbers[j]) {
+                    winningTicketCount++;
+                }
+            }
+        }
+
+        require(winningTicketCount > 0, "No winning tickets");
+
+        // Calculate prize amount
+        uint256 prizePerWinner = lottery.prizePool / lottery.winnersCount;
+        uint256 totalPrize = prizePerWinner * winningTicketCount;
+
+        // Mark as claimed and transfer prize
+        ticketInfo.hasClaimed = true;
+        require(
+            ls.paymentToken.transfer(msg.sender, totalPrize),
+            "Prize transfer failed"
+        );
+
+        emit PrizeClaimed(lotteryId, msg.sender, totalPrize);
+        return totalPrize;
     }
-    
-    function withdrawProceeds(uint256 lotteryNo) internal {
-        LotteryStorage storage ls = diamondStorage();
-        LotteryInfo storage lottery = ls.lotteries[lotteryNo];
-        
-        require(lottery.finished, "Lottery not finished");
-        require(lottery.ticketsSold * 100 >= lottery.noOfTickets * lottery.minPercentage, "Lottery cancelled");
-        
-        uint256 totalProceeds = lottery.ticketsSold * lottery.ticketPrice;
-        IERC20(lottery.paymentToken).transfer(msg.sender, totalProceeds);
-    }
-    
+
     // View functions
-    function getCurrentLotteryNo() internal view returns (uint256) {
-        return diamondStorage().currentLotteryNo;
+    function getLotteryInfo(uint256 lotteryId) internal view returns (
+        uint256 endTime,
+        uint256 totalTickets,
+        uint256 purchasedTickets,
+        uint256 winnersCount,
+        uint256 minPercentage,
+        uint256 ticketPrice,
+        uint256 prizePool,
+        bool isCanceled,
+        bool isFinalized
+    ) {
+        LotteryStorage storage ls = lotteryStorage();
+        Lottery storage lottery = ls.lotteries[lotteryId];
+
+        return (
+            lottery.endTime,
+            lottery.totalTickets,
+            lottery.purchasedTickets,
+            lottery.winnersCount,
+            lottery.minTicketPercentage,
+            lottery.ticketPrice,
+            lottery.prizePool,
+            lottery.isCanceled,
+            lottery.isFinalized
+        );
     }
-    
-    function getNumPurchaseTxs(uint256 lotteryNo) internal view returns (uint256) {
-        return diamondStorage().purchaseTxs[lotteryNo].length / 2;
+
+    function getUserTickets(
+        uint256 lotteryId,
+        address user
+    ) internal view returns (
+        uint256 ticketCount,
+        bool revealed,
+        uint256[] memory ticketNumbers,
+        bool hasClaimed
+    ) {
+        LotteryStorage storage ls = lotteryStorage();
+        TicketInfo storage ticketInfo = ls.userTickets[lotteryId][user];
+
+        return (
+            ticketInfo.ticketCount,
+            ticketInfo.revealed,
+            ticketInfo.ticketNumbers,
+            ticketInfo.hasClaimed
+        );
     }
-    
-    function getIthPurchasedTicketTx(uint256 i, uint256 lotteryNo)
-        internal
-        view
-        returns (uint256 startTicketNo, uint256 quantity)
-    {
-        LotteryStorage storage ls = diamondStorage();
-        require(i < ls.purchaseTxs[lotteryNo].length / 2, "Invalid index");
-        
-        startTicketNo = ls.purchaseTxs[lotteryNo][i * 2];
-        quantity = ls.purchaseTxs[lotteryNo][i * 2 + 1];
+
+    function getWinningNumbers(
+        uint256 lotteryId
+    ) internal view returns (uint256[] memory) {
+        LotteryStorage storage ls = lotteryStorage();
+        return ls.lotteries[lotteryId].winningNumbers;
     }
-    
-    function checkIfTicketWon(address owner, uint256 lotteryNo, uint256 ticketNo)
-        internal
-        view
-        returns (bool)
-    {
-        LotteryStorage storage ls = diamondStorage();
-        LotteryInfo storage lottery = ls.lotteries[lotteryNo];
-        
-        require(lottery.finished, "Lottery not finished");
-        require(lottery.tickets[ticketNo].owner == owner, "Not ticket owner");
-        
-        for (uint256 i = 0; i < lottery.noOfWinners; i++) {
-            if (lottery.winningTickets[i] == ticketNo) {
+
+    function isWinningTicket(
+        uint256 lotteryId,
+        uint256 ticketNumber
+    ) internal view returns (bool) {
+        LotteryStorage storage ls = lotteryStorage();
+        Lottery storage lottery = ls.lotteries[lotteryId];
+
+        for (uint256 i = 0; i < lottery.winningNumbers.length; i++) {
+            if (lottery.winningNumbers[i] == ticketNumber) {
                 return true;
             }
         }
         return false;
     }
-    
-    function getIthWinningTicket(uint256 lotteryNo, uint256 i)
-        internal
-        view
-        returns (uint256)
-    {
-        LotteryStorage storage ls = diamondStorage();
-        LotteryInfo storage lottery = ls.lotteries[lotteryNo];
-        require(lottery.finished, "Lottery not finished");
-        require(i < lottery.noOfWinners, "Invalid winner index");
-        return lottery.winningTickets[i];
-    }
-    
-    function setPaymentToken(address tokenAddr) internal {
-        LotteryStorage storage ls = diamondStorage();
-        ls.lotteries[ls.currentLotteryNo].paymentToken = tokenAddr;
-    }
-    
-    function getPaymentToken(uint256 lotteryNo) internal view returns (address) {
-        return diamondStorage().lotteries[lotteryNo].paymentToken;
-    }
-    
-    function getLotteryInfo(uint256 lotteryNo)
-        internal
-        view
-        returns (
-            uint256 endTime,
-            uint256 noOfTickets,
-            uint256 noOfWinners,
-            uint256 minPercentage,
-            uint256 ticketPrice
-        )
-    {
-        LotteryInfo storage lottery = diamondStorage().lotteries[lotteryNo];
-        return (
-            lottery.endTime,
-            lottery.noOfTickets,
-            lottery.noOfWinners,
-            lottery.minPercentage,
-            lottery.ticketPrice
-        );
-    }
-    
-    function getLotteryURL(uint256 lotteryNo)
-        internal
-        view
-        returns (bytes32 htmlHash, string memory url)
-    {
-        LotteryInfo storage lottery = diamondStorage().lotteries[lotteryNo];
-        return (lottery.htmlHash, lottery.url);
-    }
-    
-    function getLotterySales(uint256 lotteryNo) internal view returns (uint256) {
-        return diamondStorage().lotteries[lotteryNo].ticketsSold;
-    }
+}
