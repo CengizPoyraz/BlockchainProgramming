@@ -1,115 +1,91 @@
-/* global ethers */
-/* eslint prefer-const: "off" */
+import { ethers } from 'hardhat';
+import { getSelectors, FacetCutAction } from './diamond';
 
-const { getSelectors, FacetCutAction } = require('./libraries/diamond.js')
+async function main() {
+  const accounts = await ethers.getSigners();
+  const contractOwner = accounts[0];
 
-async function deployDiamond() {
-  const accounts = await ethers.getSigners()
-  const contractOwner = accounts[0]
+  // Deploy DiamondCutFacet
+  const DiamondCutFacet = await ethers.getContractFactory('DiamondCutFacet');
+  const diamondCutFacet = await DiamondCutFacet.deploy();
+  await diamondCutFacet.deployed();
+  console.log('DiamondCutFacet deployed:', diamondCutFacet.address);
 
-  // deploy DiamondCutFacet
-  const DiamondCutFacet = await ethers.getContractFactory('DiamondCutFacet')
-  const diamondCutFacet = await DiamondCutFacet.deploy()
-  await diamondCutFacet.deployed()
-  console.log('DiamondCutFacet deployed:', diamondCutFacet.address)
+  // Deploy Diamond
+  const Diamond = await ethers.getContractFactory('Diamond');
+  const diamond = await Diamond.deploy(contractOwner.address, diamondCutFacet.address);
+  await diamond.deployed();
+  console.log('Diamond deployed:', diamond.address);
 
-  // deploy DiamondLoupeFacet
-  const DiamondLoupeFacet = await ethers.getContractFactory('DiamondLoupeFacet')
-  const diamondLoupeFacet = await DiamondLoupeFacet.deploy()
-  await diamondLoupeFacet.deployed()
-  console.log('DiamondLoupeFacet deployed:', diamondLoupeFacet.address)
-
-  // deploy Diamond
-  const Diamond = await ethers.getContractFactory('Diamond')
-  const diamond = await Diamond.deploy(contractOwner.address, diamondCutFacet.address)
-  await diamond.deployed()
-  console.log('Diamond deployed:', diamond.address)
-
-
-  // deploy LotteryCoreFacet
-  const LotteryCoreFacet = await ethers.getContractFactory('LotteryCoreFacet')
-  const lotteryCoreFacet = await LotteryCoreFacet.deploy()
-  await lotteryCoreFacet.deployed()
-  console.log('LotteryCoreFacet deployed:', lotteryCoreFacet.address)
-
-  // deploy LotteryViewFacet
-  const LotteryViewFacet = await ethers.getContractFactory('LotteryViewFacet')
-  const lotteryViewFacet = await LotteryViewFacet.deploy()
-  await lotteryViewFacet.deployed()
-  console.log('LotteryViewFacet deployed:', lotteryViewFacet.address)
-
-   // deploy LotteryRevealFacet
-   const LotteryRevealFacet = await ethers.getContractFactory('LotteryRevealFacet')
-   const lotteryRevealFacet = await LotteryRevealFacet.deploy()
-   await lotteryRevealFacet.deployed()
-   console.log('LotteryRevealFacet deployed:', lotteryRevealFacet.address) 
-
-   // deploy LotteryAdminFacet
-   const LotteryAdminFacet = await ethers.getContractFactory('LotteryAdminFacet')
-   const lotteryAdminFacet = await LotteryAdminFacet.deploy()
-   await lotteryAdminFacet.deployed()
-   console.log('LotteryAdminFacet deployed:', lotteryAdminFacet.address) 
-
-  // deploy DiamondInit
+  // Deploy DiamondInit
   // DiamondInit provides a function that is called when the diamond is upgraded to initialize state variables
-  // Read about how the diamondCut function works here: https://eips.ethereum.org/EIPS/eip-2535#addingreplacingremoving-functions
-  const DiamondInit = await ethers.getContractFactory('DiamondInit')
-  const diamondInit = await DiamondInit.deploy()
-  await diamondInit.deployed()
-  console.log('DiamondInit deployed:', diamondInit.address)
+  const DiamondInit = await ethers.getContractFactory('DiamondInit');
+  const diamondInit = await DiamondInit.deploy();
+  await diamondInit.deployed();
+  console.log('DiamondInit deployed:', diamondInit.address);
 
-  // deploy facets
-  console.log('')
-  console.log('Deploying facets')
+  // Deploy facets
+  console.log('');
+  console.log('Deploying facets');
   const FacetNames = [
-    'DiamondCutFacet',
     'DiamondLoupeFacet',
     'OwnershipFacet',
-    "LotteryCoreFacet",
-    "LotteryViewFacet",
-    "LotteryRevealFacet",
-    "LotteryAdminFacet"
-  ]
-  const cut = []
+    'LotteryFacet'
+  ];
+  const cut = [];
   for (const FacetName of FacetNames) {
-    const Facet = await ethers.getContractFactory(FacetName)
-    const facet = await Facet.deploy()
-    await facet.deployed()
-    console.log(`${FacetName} deployed: ${facet.address}`)
+    const Facet = await ethers.getContractFactory(FacetName);
+    const facet = await Facet.deploy();
+    await facet.deployed();
+    console.log(`${FacetName} deployed: ${facet.address}`);
     cut.push({
       facetAddress: facet.address,
       action: FacetCutAction.Add,
       functionSelectors: getSelectors(facet)
-    })
+    });
   }
 
-  // upgrade diamond with facets
-  console.log('')
-  console.log('Diamond Cut:', cut)
-  const diamondCut = await ethers.getContractAt('IDiamondCut', diamond.address)
-  let tx
-  let receipt
-  // call to init function
-  let functionCall = diamondInit.interface.encodeFunctionData('init')
-  tx = await diamondCut.diamondCut(cut, diamondInit.address, functionCall)
-  console.log('Diamond cut tx: ', tx.hash)
-  receipt = await tx.wait()
+  // Upgrade diamond with facets
+  console.log('');
+  console.log('Diamond Cut:', cut);
+  const diamondCut = await ethers.getContractAt('IDiamondCut', diamond.address);
+  let tx;
+  let receipt;
+
+  // Call to init function
+  let functionCall = diamondInit.interface.encodeFunctionData('init');
+  tx = await diamondCut.diamondCut(cut, diamondInit.address, functionCall);
+  receipt = await tx.wait();
   if (!receipt.status) {
-    throw Error(`Diamond upgrade failed: ${tx.hash}`)
+    throw Error('Diamond upgrade failed: ' + tx.hash);
   }
-  console.log('Completed diamond cut')
-  return diamond.address
+  console.log('Diamond cut complete');
+
+  // Deploy ERC20 token for testing
+  const Token = await ethers.getContractFactory('TestToken');
+  const token = await Token.deploy('Lottery Token', 'LTK');
+  await token.deployed();
+  console.log('Test Token deployed:', token.address);
+
+  // Set token address in lottery
+  const lottery = await ethers.getContractAt('LotteryFacet', diamond.address);
+  tx = await lottery.setPaymentToken(token.address);
+  await tx.wait();
+  console.log('Payment token set');
+
+  return {
+    diamond: diamond.address,
+    token: token.address,
+    facets: {
+      diamondCut: diamondCutFacet.address,
+      diamondInit: diamondInit.address
+    }
+  };
 }
 
-// We recommend this pattern to be able to use async/await everywhere
-// and properly handle errors.
-if (require.main === module) {
-  deployDiamond()
-    .then(() => process.exit(0))
-    .catch(error => {
-      console.error(error)
-      process.exit(1)
-    })
-}
-
-exports.deployDiamond = deployDiamond
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
