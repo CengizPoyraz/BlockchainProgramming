@@ -22,7 +22,11 @@ RUN (type -p wget >/dev/null || ( apt update &&  apt-get install wget -y)) \
 	&&  apt update \
 	&&  apt install gh -y
 ENV DEBIAN_FRONTEND=
+RUN npm install -g npm@11.0.0
 RUN git clone $BLOCKCHAIN_GIT_URL $BLOCKCHAIN_HOME
-RUN npm install
+RUN rm -fr node_modules
+RUN npm update
+RUN cd frontend
+RUN npm update
 EXPOSE 8551
 EXPOSE 3000
