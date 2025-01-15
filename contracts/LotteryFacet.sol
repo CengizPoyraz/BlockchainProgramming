@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "../libraries/LibDiamond.sol";
-import "../libraries/LibLottery.sol";
+import "./libraries/LibDiamond.sol";
+import "./libraries/LibLottery.sol";
 
 contract LotteryFacet {
     event LotteryCreated(uint256 indexed lotteryNo, uint256 endTime, uint256 ticketPrice);

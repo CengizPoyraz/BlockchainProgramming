@@ -279,3 +279,4 @@ library LibLottery {
     function getLotterySales(uint256 lotteryNo) internal view returns (uint256) {
         return diamondStorage().lotteries[lotteryNo].ticketsSold;
     }
+}

@@ -1,5 +1,5 @@
 import { ethers } from 'hardhat';
-import { getSelectors, FacetCutAction } from './diamond';
+import { getSelectors, FacetCutAction } from './libraries/diamond';
 
 async function main() {
   const accounts = await ethers.getSigners();
